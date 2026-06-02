@@ -219,7 +219,6 @@ def main():
                 shuffled = random.sample(range(len(SCENARIOS)), 12)
                 st.session_state.scenarios_no_ai = [SCENARIOS[i] for i in shuffled[:6]]
                 st.session_state.scenarios_ai = [SCENARIOS[i] for i in shuffled[6:12]]
-                # 顺序平衡
                 if int(pid) % 2 == 1:
                     st.session_state.block_order = ['no_ai', 'ai']
                 else:
@@ -333,7 +332,7 @@ def main():
                 st.markdown(f"### 🤖 AI 建议选：{st.session_state.ai_choice}")
                 st.info(st.session_state.ai_text)
                 st.session_state.ai_shown = True
-                st.rerun()
+                st.rerun()   # 刷新以展示选择按钮
 
             if not st.session_state.waiting_choice:
                 st.session_state.waiting_choice = True
@@ -368,7 +367,6 @@ def main():
                         **st.session_state.trust_items
                     }
                     st.session_state.data.append(row)
-                    # 清理试次临时状态
                     st.session_state.trial_idx += 1
                     st.session_state.waiting_choice = False
                     st.session_state.choice = ''
