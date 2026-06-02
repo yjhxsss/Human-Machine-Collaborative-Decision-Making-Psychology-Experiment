@@ -3,8 +3,9 @@ import requests
 import time
 import random
 import pandas as pd
+import re
 
-# ==================== 15 个完整日常决策情景 ====================
+# ==================== 15个日常决策情景 ====================
 SCENARIOS = [
     {
         "desc": "你刚搬到一座新城市，需要找个住处。市中心一套公寓离公司很近，步行就能上班，但租金较贵，而且周边晚上比较嘈杂。郊区一套房子租金便宜一半，环境安静，但每天通勤需要坐一个多小时的地铁，早高峰还很拥挤。",
@@ -94,9 +95,21 @@ TRUST_ITEMS = [
     "我依赖 AI 系统来帮助我做决策。"
 ]
 
-# ==================== DeepSeek API 调用 ====================
-def get_ai_advice(scenario_desc, option_a, option_b):
-    """调用 DeepSeek API 获取建议，温度=0 确保确定性。"""
+# ==================== 工具函数 ====================
+def extract_ai_option(ai_text):
+    """从 AI 回复中提取建议的选项（'A' 或 'B'），若失败返回空字符串"""
+    if not ai_text:
+        return ""
+    m = re.search(r'建议[选选择]*\s*([AB])', ai_text)
+    if m:
+        return m.group(1)
+    m = re.search(r'选\s*([AB])', ai_text)
+    if m:
+        return m.group(1)
+    return ""
+
+def call_deepseek(scenario_desc, option_a, option_b):
+    """调用 DeepSeek API 获取建议，温度=0 保证确定性"""
     api_key = st.secrets["API_KEY"]
     url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
@@ -122,34 +135,31 @@ def get_ai_advice(scenario_desc, option_a, option_b):
         if r.status_code == 200:
             return r.json()["choices"][0]["message"]["content"].strip()
         else:
-            return f"[AI 暂时无法回应（状态码 {r.status_code}）]"
+            return f"[AI 无法回应 (状态码 {r.status_code})]"
     except Exception as e:
-        return f"[连接失败：{e}]"
+        return f"[连接失败: {e}]"
 
 # ==================== 主函数 ====================
 def main():
     st.set_page_config(page_title="AI决策实验", layout="centered")
     st.title("🧠 日常决策实验")
 
-    # 初始化所有会话状态
     if 'stage' not in st.session_state:
-        st.session_state.stage = 'trust_scale'   # 流程: trust_scale -> practice -> id_input -> block_instr -> trial -> done
-        st.session_state.data = []
+        st.session_state.stage = 'trust_scale'
+        st.session_state.data = []               # 存储所有试次数据
+        st.session_state.trust_scores = []        # 信任量表各题得分
         st.session_state.trust_total = 0
-        st.session_state.scenarios_no_ai = []
-        st.session_state.scenarios_ai = []
-        st.session_state.block_order = []        # 如 ['no_ai', 'ai']
+        st.session_state.trust_items = {}
+        st.session_state.block_order = []
         st.session_state.block_idx = 0
         st.session_state.trial_idx = 0
         st.session_state.current_block = ''
         st.session_state.choice = ''
         st.session_state.waiting_choice = False
         st.session_state.ai_text = ''
-        st.session_state.ai_called = False       # 是否已调用 API
-        st.session_state.countdown_start = 0.0
         st.session_state.participant = ''
 
-    # ---------- 阶段1：自动化信任量表 ----------
+    # ==================== 阶段1：信任量表 ====================
     if st.session_state.stage == 'trust_scale':
         st.markdown("## 第一部分：AI 态度调查")
         st.write("请根据你的真实想法，对以下陈述打分（1 = 完全不同意，7 = 完全同意）")
@@ -158,11 +168,13 @@ def main():
             score = st.slider(item, 1, 7, 4, key=f"trust_{i}")
             scores.append(score)
         if st.button("提交并开始实验"):
+            st.session_state.trust_scores = scores
             st.session_state.trust_total = sum(scores)
+            st.session_state.trust_items = {f"trust_q{i+1}": scores[i] for i in range(7)}
             st.session_state.stage = 'practice'
             st.rerun()
 
-    # ---------- 阶段2：练习试次 ----------
+    # ==================== 阶段2：练习 ====================
     elif st.session_state.stage == 'practice':
         st.markdown("## 练习：熟悉实验流程")
         st.write("下面是一个示例情景，请像正式实验那样做出选择。本阶段没有 AI 建议。")
@@ -184,12 +196,12 @@ def main():
                     st.session_state.practice_choice = 'B'
                     st.rerun()
         else:
-            st.write(f"你选择了 {st.session_state.practice_choice}。练习结束，现在进入正式实验。")
+            st.write(f"你选择了 {st.session_state.practice_choice}。练习结束。")
             if st.button("进入正式实验"):
                 st.session_state.stage = 'id_input'
                 st.rerun()
 
-    # ---------- 阶段3：输入编号并随机分配情景 ----------
+    # ==================== 阶段3：编号与随机分组 ====================
     elif st.session_state.stage == 'id_input':
         pid = st.text_input("请输入被试编号（数字）")
         if st.button("确定"):
@@ -199,15 +211,13 @@ def main():
                 try:
                     int(pid)
                 except:
-                    st.warning("被试编号必须是数字")
-                    return
+                    st.warning("被试编号必须是数字"); return
                 st.session_state.participant = pid
                 random.seed(int(pid))
-                # 从15个情景中随机抽取12个，前6个为无AI，后6个为有AI
-                indices = random.sample(range(len(SCENARIOS)), 12)
-                st.session_state.scenarios_no_ai = [SCENARIOS[i] for i in indices[:6]]
-                st.session_state.scenarios_ai = [SCENARIOS[i] for i in indices[6:]]
-                # 按奇偶决定 block 顺序
+                shuffled = random.sample(range(len(SCENARIOS)), 12)
+                st.session_state.no_ai_scenarios = [SCENARIOS[i] for i in shuffled[:6]]
+                st.session_state.ai_scenarios = [SCENARIOS[i] for i in shuffled[6:]]
+                # 顺序平衡
                 if int(pid) % 2 == 1:
                     st.session_state.block_order = ['no_ai', 'ai']
                 else:
@@ -216,41 +226,42 @@ def main():
                 st.session_state.stage = 'block_instr'
                 st.rerun()
 
-    # ---------- 阶段4：Block 指导语 ----------
+    # ==================== 阶段4：Block 指导语 ====================
     elif st.session_state.stage == 'block_instr':
         idx = st.session_state.block_idx
         if idx >= 2:
+            # 计算自然偏好（无 AI 条件下选 A 的比例）
+            no_ai_data = [d for d in st.session_state.data if d['block'] == 'no_ai']
+            if no_ai_data:
+                a_count = sum(1 for d in no_ai_data if d['choice'] == 'A')
+                natural_pref = a_count / len(no_ai_data)
+            else:
+                natural_pref = None
+            st.session_state.natural_preference = natural_pref
             st.session_state.stage = 'done'
             st.rerun()
+
         block = st.session_state.block_order[idx]
         st.session_state.current_block = block
         if block == 'no_ai':
-            msg = f"**阶段 {idx+1}/2：自主判断（无 AI 建议）**\n\n在这一阶段，你需要完全依靠自己的判断来做选择。屏幕会显示一个生活情景，请阅读后直接选择 A 或 B。"
+            msg = f"**阶段 {idx+1}/2：自主判断（无 AI 建议）**\n\n请阅读情景后直接做出选择。"
         else:
-            msg = f"**阶段 {idx+1}/2：AI 辅助判断**\n\n情景显示后，AI 会立即开始生成建议（可能需要几秒），随后将进入 6 秒阅读倒计时，倒计时结束后 AI 建议自动出现，你再做出选择。"
+            msg = f"**阶段 {idx+1}/2：AI 辅助判断**\n\n情景显示后 AI 将立即生成建议，随后有 6 秒阅读倒计时，之后建议自动出现。"
         st.markdown(msg)
         if st.button("开始本阶段"):
             st.session_state.stage = 'trial'
             st.session_state.trial_idx = 0
-            st.session_state.ai_called = False
             st.session_state.ai_text = ''
-            st.session_state.waiting_choice = False
             st.session_state.choice = ''
-            if 'countdown_start' in st.session_state:
-                del st.session_state.countdown_start
+            st.session_state.waiting_choice = False
             st.rerun()
 
-    # ---------- 阶段5：试次 ----------
+    # ==================== 阶段5：试次 ====================
     elif st.session_state.stage == 'trial':
         block = st.session_state.current_block
-        if block == 'no_ai':
-            trials = st.session_state.scenarios_no_ai
-        else:
-            trials = st.session_state.scenarios_ai
-
+        trials = st.session_state.no_ai_scenarios if block == 'no_ai' else st.session_state.ai_scenarios
         idx = st.session_state.trial_idx
         if idx >= len(trials):
-            # 当前 block 结束
             st.session_state.block_idx += 1
             st.session_state.stage = 'block_instr'
             st.rerun()
@@ -278,16 +289,20 @@ def main():
                 st.markdown(f"你的选择：**{st.session_state.choice}**")
                 conf = st.slider("信心评价 (1=完全不确定, 7=非常确定)", 1, 7, 4, key=f"no_conf_{idx}")
                 if st.button("提交并继续", key=f"no_sub_{idx}"):
-                    st.session_state.data.append({
+                    row = {
                         "participant": st.session_state.participant,
                         "block": "no_ai",
                         "trial": idx + 1,
                         "scenario": trial['desc'][:40] + "...",
-                        "ai_response": "",
                         "choice": st.session_state.choice,
                         "confidence": conf,
-                        "trust_total": st.session_state.trust_total
-                    })
+                        "ai_advice_option": "",
+                        "ai_response_full": "",
+                        **st.session_state.trust_items,
+                        "trust_total": st.session_state.trust_total,
+                        "natural_preference": None   # 最后填充
+                    }
+                    st.session_state.data.append(row)
                     st.session_state.trial_idx += 1
                     st.session_state.waiting_choice = False
                     st.session_state.choice = ''
@@ -295,24 +310,26 @@ def main():
 
         # ---------- 有 AI 条件 ----------
         else:
-            # 第一步：若尚未调用 API，则立即调用
+            # 第一阶段：调用 API（仅一次）
+            if 'ai_called' not in st.session_state:
+                st.session_state.ai_called = False
             if not st.session_state.ai_called:
                 with st.spinner("🤖 AI 正在准备建议，请稍候..."):
-                    ai_reply = get_ai_advice(trial['desc'], trial['A'], trial['B'])
-                st.session_state.ai_text = ai_reply
+                    reply = call_deepseek(trial['desc'], trial['A'], trial['B'])
+                st.session_state.ai_text = reply
                 st.session_state.ai_called = True
                 st.session_state.countdown_start = time.time()
                 st.rerun()
 
-            # 第二步：倒计时 6 秒
+            # 第二阶段：6 秒倒计时
             elapsed = time.time() - st.session_state.countdown_start
-            remaining = max(0.0, 6.0 - elapsed)
+            remaining = max(0, 6.0 - elapsed)
             if remaining > 0:
                 st.info(f"请仔细阅读情景，AI 建议将在 {remaining:.1f} 秒后显示。")
                 time.sleep(0.5)
                 st.rerun()
 
-            # 第三步：显示建议并允许选择
+            # 第三阶段：显示建议并允许选择
             st.markdown("---")
             st.markdown("### 🤖 AI 的建议")
             st.info(st.session_state.ai_text)
@@ -333,19 +350,24 @@ def main():
 
             if st.session_state.choice != '':
                 st.markdown(f"你的选择：**{st.session_state.choice}**")
-                conf = st.slider("信心评价", 1, 7, 4, key=f"ai_conf_{idx}")
+                conf = st.slider("信心评价 (1=完全不确定, 7=非常确定)", 1, 7, 4, key=f"ai_conf_{idx}")
                 if st.button("提交并继续", key=f"ai_sub_{idx}"):
-                    st.session_state.data.append({
+                    ai_opt = extract_ai_option(st.session_state.ai_text)
+                    row = {
                         "participant": st.session_state.participant,
                         "block": "ai",
                         "trial": idx + 1,
                         "scenario": trial['desc'][:40] + "...",
-                        "ai_response": st.session_state.ai_text,
                         "choice": st.session_state.choice,
                         "confidence": conf,
-                        "trust_total": st.session_state.trust_total
-                    })
-                    # 重置本试次状态
+                        "ai_advice_option": ai_opt,
+                        "ai_response_full": st.session_state.ai_text,
+                        **st.session_state.trust_items,
+                        "trust_total": st.session_state.trust_total,
+                        "natural_preference": None
+                    }
+                    st.session_state.data.append(row)
+                    # 重置试次状态
                     st.session_state.trial_idx += 1
                     st.session_state.waiting_choice = False
                     st.session_state.choice = ''
@@ -354,11 +376,23 @@ def main():
                         del st.session_state.countdown_start
                     st.rerun()
 
-    # ---------- 阶段6：实验完成 ----------
+    # ==================== 阶段6：完成 ====================
     elif st.session_state.stage == 'done':
         st.success("实验完成！感谢你的参与 🎉")
+        # 填充自然偏好到所有行
+        nat_pref = st.session_state.natural_preference
+        for row in st.session_state.data:
+            row['natural_preference'] = nat_pref if nat_pref is not None else ""
+
         df = pd.DataFrame(st.session_state.data)
+        st.markdown("### 📊 您的实验数据")
         st.dataframe(df)
+
+        st.markdown("### 📋 AI 态度调查得分")
+        for i in range(7):
+            st.write(f"题{i+1}: {st.session_state.trust_scores[i]}")
+        st.write(f"**总分：{st.session_state.trust_total} / 49**")
+
         csv = df.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
             label="下载实验数据 (CSV)",
