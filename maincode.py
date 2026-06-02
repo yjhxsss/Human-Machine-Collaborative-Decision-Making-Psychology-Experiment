@@ -140,7 +140,6 @@ def main():
     st.set_page_config(page_title="AI决策实验", layout="centered")
     st.title("🧠 日常决策实验")
 
-    # 初始化所有会话状态
     if 'stage' not in st.session_state:
         st.session_state.stage = 'trust_scale'
         st.session_state.data = []
@@ -153,7 +152,6 @@ def main():
         st.session_state.trial_idx = 0
         st.session_state.current_block = ''
         st.session_state.choice = ''
-        st.session_state.waiting_choice = False
         st.session_state.ai_text = ''
         st.session_state.ai_choice = ''
         st.session_state.ai_shown = False
@@ -246,7 +244,6 @@ def main():
             st.session_state.ai_text = ''
             st.session_state.ai_choice = ''
             st.session_state.ai_shown = False
-            st.session_state.waiting_choice = False
             st.session_state.choice = ''
             if 'countdown_start' in st.session_state:
                 del st.session_state.countdown_start
@@ -269,19 +266,17 @@ def main():
 
         # ========== 无 AI 条件 ==========
         if block == 'no_ai':
-            if not st.session_state.waiting_choice:
-                st.session_state.waiting_choice = True
-                st.rerun()
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("选择 A", key=f"no_a_{idx}"):
-                    st.session_state.choice = 'A'
-                    st.rerun()
-            with col2:
-                if st.button("选择 B", key=f"no_b_{idx}"):
-                    st.session_state.choice = 'B'
-                    st.rerun()
-            if st.session_state.choice != '':
+            if st.session_state.choice == '':
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("选择 A", key=f"no_a_{idx}"):
+                        st.session_state.choice = 'A'
+                        st.rerun()
+                with col2:
+                    if st.button("选择 B", key=f"no_b_{idx}"):
+                        st.session_state.choice = 'B'
+                        st.rerun()
+            else:
                 st.markdown(f"你的选择：**{st.session_state.choice}**")
                 conf = st.slider("信心评价 (1=完全不确定, 7=非常确定)", 1, 7, 4, key=f"no_conf_{idx}")
                 if st.button("提交并继续", key=f"no_sub_{idx}"):
@@ -300,13 +295,12 @@ def main():
                     }
                     st.session_state.data.append(row)
                     st.session_state.trial_idx += 1
-                    st.session_state.waiting_choice = False
                     st.session_state.choice = ''
                     st.rerun()
 
         # ========== 有 AI 条件 ==========
         else:
-            # 第一阶段：如果尚未调用 API，立即调用
+            # 第一阶段：调用 API（如果尚未调用）
             if 'ai_called' not in st.session_state:
                 st.session_state.ai_called = False
             if not st.session_state.ai_called:
@@ -326,29 +320,27 @@ def main():
                 time.sleep(0.5)
                 st.rerun()
 
-            # 第三阶段：显示建议并选择
+            # 第三阶段：倒计时结束，显示建议（如果尚未显示）
             if not st.session_state.ai_shown:
                 st.markdown("---")
                 st.markdown(f"### 🤖 AI 建议选：{st.session_state.ai_choice}")
                 st.info(st.session_state.ai_text)
                 st.session_state.ai_shown = True
-                st.rerun()   # 刷新以展示选择按钮
+                # 关键：不再 rerun，直接继续渲染选择按钮
 
-            if not st.session_state.waiting_choice:
-                st.session_state.waiting_choice = True
-                st.rerun()
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("选择 A", key=f"ai_a_{idx}"):
-                    st.session_state.choice = 'A'
-                    st.rerun()
-            with col2:
-                if st.button("选择 B", key=f"ai_b_{idx}"):
-                    st.session_state.choice = 'B'
-                    st.rerun()
-
-            if st.session_state.choice != '':
+            # 选择按钮（如果未做选择）
+            if st.session_state.choice == '':
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("选择 A", key=f"ai_a_{idx}"):
+                        st.session_state.choice = 'A'
+                        st.rerun()
+                with col2:
+                    if st.button("选择 B", key=f"ai_b_{idx}"):
+                        st.session_state.choice = 'B'
+                        st.rerun()
+            else:
+                # 已做选择，显示信心评分
                 st.markdown(f"你的选择：**{st.session_state.choice}**")
                 conf = st.slider("信心评价 (1=完全不确定, 7=非常确定)", 1, 7, 4, key=f"ai_conf_{idx}")
                 if st.button("提交并继续", key=f"ai_sub_{idx}"):
@@ -368,7 +360,6 @@ def main():
                     }
                     st.session_state.data.append(row)
                     st.session_state.trial_idx += 1
-                    st.session_state.waiting_choice = False
                     st.session_state.choice = ''
                     st.session_state.ai_called = False
                     st.session_state.ai_shown = False
