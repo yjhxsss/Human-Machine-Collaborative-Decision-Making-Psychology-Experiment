@@ -253,7 +253,7 @@ def main():
         if block == 'no_ai':
             msg = f"**阶段 {idx+1}/2：自主判断（无 AI 建议）**\n\n请阅读情景后直接做出选择。"
         else:
-            msg = f"**阶段 {idx+1}/2：AI 辅助判断**\n\n情景显示后，AI 将立即开始生成建议，随后进入 6 秒阅读倒计时，倒计时结束后 AI 建议自动出现。"
+            msg = f"**阶段 {idx+1}/2：AI 辅助判断**\n\n情景显示后，AI 将立即开始生成建议，随后进入 6 秒阅读倒计时，倒计时结束后 AI 建议自动出现。该AI系统已经适配于本次实验的情景（均具有完整的提示词，均是AI基于情景题实时反馈的数据）"
         st.markdown(msg)
         if st.button("开始本阶段"):
             st.session_state.stage = 'trial'
@@ -421,7 +421,7 @@ def main():
         st.dataframe(df)
 
         csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("下载数据 (CSV)", data=csv,
+        st.download_button("请下载实验数据返回主试 (CSV)", data=csv,
                            file_name=f"subj_{st.session_state.participant}.csv",
                            mime="text/csv")
         if st.button("重新开始"):
