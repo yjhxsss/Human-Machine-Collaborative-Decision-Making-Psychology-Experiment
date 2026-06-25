@@ -84,7 +84,7 @@ SCENARIOS = [
     }
 ]
 
-# ==================== 自动化信任量表 ====================
+# ==================== 自动化信任量表（7题） ====================
 TRUST_ITEMS = [
     "我认为 AI 决策系统是可靠的。",
     "我相信 AI 系统能给出正确的建议。",
@@ -124,10 +124,9 @@ def get_ai_advice(scenario_desc, option_a, option_b):
         return f"[连接失败：{e}]"
 
 def extract_ai_choice(ai_text):
-    """从 AI 回复中提取建议选项（A 或 B），增强鲁棒性"""
+    """从 AI 回复中提取建议选项（A/B）"""
     if not ai_text:
         return ""
-    text = ai_text.strip()
     # 多种正则模式，按优先级尝试
     patterns = [
         r'建议[选选择]*\s*([AB])',   # 建议选A / 建议选择B
@@ -140,14 +139,13 @@ def extract_ai_choice(ai_text):
         r'([AB])\s*[。.]',           # 以A或B结尾的句子（谨慎）
     ]
     for pat in patterns:
-        match = re.search(pat, text, re.IGNORECASE)
+        match = re.search(pat, ai_text, re.IGNORECASE)
         if match:
             return match.group(1).upper()
     # 如果都没匹配到，在文本中查找独立的 A 或 B（尽量避开单词中的AB）
-    # 仅作为最后手段，并记录警告
-    if re.search(r'\bA\b', text):
+    if re.search(r'\bA\b', ai_text):
         return 'A'
-    if re.search(r'\bB\b', text):
+    if re.search(r'\bB\b', ai_text):
         return 'B'
     return ""
 
@@ -157,11 +155,10 @@ def main():
     st.title("🧠 日常决策实验")
 
     if 'stage' not in st.session_state:
-        st.session_state.stage = 'trust_scale'
+        st.session_state.stage = 'ai_intro'   # 起始页面为AI助手介绍
         st.session_state.data = []
         st.session_state.trust_scores = []
         st.session_state.trust_total = 0
-        st.session_state.trust_items = {}
         st.session_state.scenarios_no_ai = []
         st.session_state.scenarios_ai = []
         st.session_state.block_order = []
@@ -175,8 +172,32 @@ def main():
         st.session_state.countdown_start = 0.0
         st.session_state.participant = ''
 
+    # ---------- AI助手介绍 ----------
+    if st.session_state.stage == 'ai_intro':
+        st.markdown("## 🤖 关于本实验中的AI助手")
+        st.markdown("""
+        在接下来的部分情景中，你将收到来自一位AI助手的建议。请花一分钟了解它的作用：
+
+        ---
+        **✨ 它是什么？**  
+        一个能够理解文字并生成回复的智能程序，由大量数据训练而成。
+
+        **💡 它的角色**  
+        在本实验里，它被设定为 **“理性且富有洞察力的决策助手”**。它会阅读你面对的情景，然后给出一个选项建议（选A或选B），并附上简单的说明。
+
+        **⚠️ 请理性看待它的建议**  
+        AI的建议在很多情况下是合理的，但它并不了解你的个人偏好、价值观和真实处境，其建议也并非绝对正确。请把它当作一个参考，而不是必须遵守的指令。
+
+        **📌 你需要做什么？**  
+        收到建议后，请你 **独立思考**，做出自己认为最合适的选择。无论你是否采纳AI的建议，都没有对错之分。
+        ---
+        """)
+        if st.button("我已了解，开始实验"):
+            st.session_state.stage = 'trust_scale'
+            st.rerun()
+
     # ---------- 信任量表 ----------
-    if st.session_state.stage == 'trust_scale':
+    elif st.session_state.stage == 'trust_scale':
         st.markdown("## 第一部分：AI 态度调查")
         st.write("请根据你的真实想法，对以下陈述打分（1 = 完全不同意，7 = 完全同意）")
         scores = []
@@ -190,7 +211,7 @@ def main():
             st.session_state.stage = 'practice'
             st.rerun()
 
-    # ---------- 练习 ----------
+    # ---------- 练习试次 ----------
     elif st.session_state.stage == 'practice':
         st.markdown("## 练习：熟悉实验流程")
         st.write("下面是一个示例情景，请像正式实验那样做出选择。本阶段没有 AI 建议。")
@@ -253,7 +274,7 @@ def main():
         if block == 'no_ai':
             msg = f"**阶段 {idx+1}/2：自主判断（无 AI 建议）**\n\n请阅读情景后直接做出选择。"
         else:
-            msg = f"**阶段 {idx+1}/2：AI 辅助判断**\n\n情景显示后，AI 将立即开始生成建议，随后进入 6 秒阅读倒计时，倒计时结束后 AI 建议自动出现。该AI系统已经适配于本次实验的情景（均具有完整的提示词，均是AI基于情景题实时反馈的数据）"
+            msg = f"**阶段 {idx+1}/2：AI 辅助判断**\n\n情景显示后，AI 将立即开始生成建议，随后进入 6 秒阅读倒计时，倒计时结束后 AI 建议自动出现。"
         st.markdown(msg)
         if st.button("开始本阶段"):
             st.session_state.stage = 'trial'
@@ -281,7 +302,7 @@ def main():
         st.write(trial['desc'])
         st.markdown(f"**A.** {trial['A']}  \n**B.** {trial['B']}")
 
-        # ========== 无 AI ==========
+        # ========== 无 AI 条件 ==========
         if block == 'no_ai':
             if st.session_state.choice == '':
                 col1, col2 = st.columns(2)
@@ -315,7 +336,7 @@ def main():
                     st.session_state.choice = ''
                     st.rerun()
 
-        # ========== 有 AI ==========
+        # ========== 有 AI 条件 ==========
         else:
             # API 调用
             if 'ai_called' not in st.session_state:
@@ -329,7 +350,7 @@ def main():
                 st.session_state.countdown_start = time.time()
                 st.rerun()
 
-            # 倒计时
+            # 6秒倒计时
             elapsed = time.time() - st.session_state.countdown_start
             remaining = max(0, 6.0 - elapsed)
             if remaining > 0:
@@ -348,7 +369,7 @@ def main():
                 else:
                     st.caption(f"[调试] 提取到的选项：{st.session_state.ai_choice}")
                 st.session_state.ai_shown = True
-                # 关键：不再 rerun，直接进入选择阶段
+                # 不再 rerun，直接进入选择阶段
 
             # 选择
             if st.session_state.choice == '':
@@ -365,12 +386,11 @@ def main():
                 st.markdown(f"你的选择：**{st.session_state.choice}**")
                 conf = st.slider("信心评价", 1, 7, 4, key=f"ai_conf_{idx}")
                 if st.button("提交并继续", key=f"ai_sub_{idx}"):
-                    # 计算采纳
                     ai_ch = st.session_state.ai_choice
                     if ai_ch in ['A', 'B']:
                         adopt = 1 if st.session_state.choice == ai_ch else 0
                     else:
-                        adopt = ""  # 无法判断
+                        adopt = ""
                     row = {
                         "participant": st.session_state.participant,
                         "block": "ai",
@@ -393,12 +413,11 @@ def main():
                         del st.session_state.countdown_start
                     st.rerun()
 
-    # ---------- 完成 ----------
+    # ---------- 实验完成 ----------
     elif st.session_state.stage == 'done':
         st.success("实验完成！感谢你的参与 🎉")
         df = pd.DataFrame(st.session_state.data)
 
-        # 个人统计
         no_ai = df[df['block'] == 'no_ai']
         ai = df[df['block'] == 'ai']
         baseline_a = (no_ai['choice'] == 'A').mean() if len(no_ai) > 0 else 0
@@ -421,7 +440,7 @@ def main():
         st.dataframe(df)
 
         csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("请下载实验数据返回主试 (CSV)", data=csv,
+        st.download_button("下载数据 (CSV)", data=csv,
                            file_name=f"subj_{st.session_state.participant}.csv",
                            mime="text/csv")
         if st.button("重新开始"):
