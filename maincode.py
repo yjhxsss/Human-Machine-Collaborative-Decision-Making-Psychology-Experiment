@@ -119,33 +119,33 @@ def get_ai_advice(scenario_desc, option_a, option_b):
         if r.status_code == 200:
             return r.json()["choices"][0]["message"]["content"].strip()
         else:
-            # 调试：显示API返回的错误详情
-            st.error(f"API 返回错误 (状态码 {r.status_code})：{r.text}")
+            # 直接显示服务器返回的原始内容
+            st.write("=== API 返回内容开始 ===")
+            st.write(r.text)
+            st.write("=== API 返回内容结束 ===")
             return f"[AI 暂时无法回应（状态码 {r.status_code}）]"
     except Exception as e:
-        st.error(f"网络连接失败：{e}")
+        st.write(f"网络或代码错误：{e}")
         return f"[连接失败：{e}]"
 
 def extract_ai_choice(ai_text):
     """从 AI 回复中提取建议选项（A/B）"""
     if not ai_text:
         return ""
-    # 多种正则模式，按优先级尝试
     patterns = [
-        r'建议[选选择]*\s*([AB])',   # 建议选A / 建议选择B
-        r'推荐\s*([AB])',            # 推荐A
+        r'建议[选选择]*\s*([AB])',
+        r'推荐\s*([AB])',
         r'我推荐\s*([AB])',
         r'我会选\s*([AB])',
-        r'选择\s*([AB])',            # 选择A
-        r'[选]\s*([AB])',            # 选A
-        r'答案\s*[是为：:]\s*([AB])',# 答案是A
-        r'([AB])\s*[。.]',           # 以A或B结尾的句子
+        r'选择\s*([AB])',
+        r'[选]\s*([AB])',
+        r'答案\s*[是为：:]\s*([AB])',
+        r'([AB])\s*[。.]',
     ]
     for pat in patterns:
         match = re.search(pat, ai_text, re.IGNORECASE)
         if match:
             return match.group(1).upper()
-    # 备用：查找独立的 A 或 B
     if re.search(r'\bA\b', ai_text):
         return 'A'
     if re.search(r'\bB\b', ai_text):
@@ -372,7 +372,6 @@ def main():
                 else:
                     st.caption(f"[调试] 提取到的选项：{st.session_state.ai_choice}")
                 st.session_state.ai_shown = True
-                # 不再 rerun，直接进入选择阶段
 
             # 选择
             if st.session_state.choice == '':
