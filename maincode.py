@@ -95,7 +95,7 @@ TRUST_ITEMS = [
     "我依赖 AI 系统来帮助我做决策。"
 ]
 
-# ==================== DeepSeek API 调用 ====================
+# ==================== DeepSeek API 调用（已更新模型名） ====================
 def get_ai_advice(scenario_desc, option_a, option_b):
     api_key = st.secrets["API_KEY"]
     url = "https://api.deepseek.com/v1/chat/completions"
@@ -107,7 +107,7 @@ def get_ai_advice(scenario_desc, option_a, option_b):
         f"B. {option_b}"
     )
     payload = {
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",   # 更新为最新可用模型
         "messages": [
             {"role": "system", "content": "你是一个理性且富有洞察力的决策助手。"},
             {"role": "user", "content": prompt}
@@ -119,13 +119,8 @@ def get_ai_advice(scenario_desc, option_a, option_b):
         if r.status_code == 200:
             return r.json()["choices"][0]["message"]["content"].strip()
         else:
-            # 直接显示服务器返回的原始内容
-            st.write("=== API 返回内容开始 ===")
-            st.write(r.text)
-            st.write("=== API 返回内容结束 ===")
             return f"[AI 暂时无法回应（状态码 {r.status_code}）]"
     except Exception as e:
-        st.write(f"网络或代码错误：{e}")
         return f"[连接失败：{e}]"
 
 def extract_ai_choice(ai_text):
